@@ -1,15 +1,9 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Função para criar cliente Supabase
-export function createClient() {
-  return createSupabaseClient(supabaseUrl, supabaseAnonKey)
-}
-
-// Instância padrão do Supabase
-export const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Tipos para as tabelas
 export interface FinancialTransaction {
