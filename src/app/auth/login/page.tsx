@@ -117,7 +117,12 @@ export default function LoginPage() {
 
       if (error) throw error
     } catch (err: any) {
-      setError(err.message || "Erro ao fazer login com Google")
+      // Mensagem mais clara para erro de OAuth não configurado
+      if (err.message?.includes('Unsupported provider') || err.message?.includes('missing OAuth secret')) {
+        setError("Login com Google não está configurado. Por favor, configure o OAuth do Google no Supabase ou use login com email/senha.")
+      } else {
+        setError(err.message || "Erro ao fazer login com Google")
+      }
       setLoading(false)
     }
   }
