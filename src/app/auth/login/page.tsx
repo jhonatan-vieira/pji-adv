@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle } from "lucide-react"
+import { Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
 function LoginForm() {
@@ -19,6 +19,8 @@ function LoginForm() {
   const [success, setSuccess] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
+  const [isForgotPassword, setIsForgotPassword] = useState(false)
+  const [debugInfo, setDebugInfo] = useState("")
 
   useEffect(() => {
     // Verificar se há mensagem de erro ou confirmação na URL
@@ -32,37 +34,75 @@ function LoginForm() {
     if (confirmedParam === 'true') {
       setSuccess("Email confirmado com sucesso! Faça login para continuar.")
     }
+
+    // Verificar se usuário já está autenticado
+    checkUser()
   }, [searchParams])
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        // Usuário já está autenticado, redirecionar para dashboard
+        router.push('/dashboard')
+      }
+    } catch (err) {
+      console.error('Erro ao verificar sessão:', err)
+    }
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError("")
     setSuccess("")
+    setDebugInfo("")
 
     try {
+      // Adicionar informações de debug
+      setDebugInfo("🔄 Tentando fazer login...")
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
-        // Mensagens de erro mais amigáveis
+        setDebugInfo(`❌ Erro no login: ${error.message}`)
+        
+        // Mensagens de erro mais amigáveis e específicas
         if (error.message.includes('Invalid login credentials')) {
-          throw new Error('Email ou senha incorretos')
+          throw new Error('❌ Email ou senha incorretos. Verifique suas credenciais e tente novamente.')
         } else if (error.message.includes('Email not confirmed')) {
-          throw new Error('Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.')
+          throw new Error('⚠️ Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada e spam.')
+        } else if (error.message.includes('Invalid email')) {
+          throw new Error('❌ Email inválido. Digite um email válido.')
+        } else if (error.message.includes('User not found')) {
+          throw new Error('❌ Usuário não encontrado. Crie uma conta primeiro.')
         } else {
-          throw error
+          throw new Error(`❌ Erro ao fazer login: ${error.message}`)
         }
       }
 
-      if (data.user) {
-        router.push("/")
-        router.refresh()
+      if (data.session && data.user) {
+        setDebugInfo("✅ Login realizado com sucesso!")
+        setSuccess("✅ Login realizado com sucesso! Redirecionando para o sistema...")
+        
+        // Aguardar um momento para garantir que a sessão foi salva
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        setDebugInfo("✅ Redirecionando para dashboard...")
+        
+        // Redirecionar para /dashboard
+        window.location.href = '/dashboard'
+      } else {
+        setDebugInfo("⚠️ Login retornou sem sessão ou usuário")
+        throw new Error('⚠️ Erro inesperado ao fazer login. Tente novamente.')
       }
     } catch (err: any) {
-      setError(err.message || "Erro ao fazer login")
+      console.error('Erro completo:', err)
+      setError(err.message || "❌ Erro ao fazer login. Tente novamente.")
+      setDebugInfo(`❌ Erro: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -73,8 +113,16 @@ function LoginForm() {
     setLoading(true)
     setError("")
     setSuccess("")
+    setDebugInfo("")
 
     try {
+      setDebugInfo("🔄 Criando conta...")
+
+      // Validar senha
+      if (password.length < 6) {
+        throw new Error('❌ A senha deve ter pelo menos 6 caracteres.')
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -83,21 +131,71 @@ function LoginForm() {
         }
       })
 
-      if (error) throw error
+      if (error) {
+        setDebugInfo(`❌ Erro ao criar conta: ${error.message}`)
+        
+        if (error.message.includes('User already registered')) {
+          throw new Error('❌ Este email já está cadastrado. Faça login ou recupere sua senha.')
+        } else if (error.message.includes('Invalid email')) {
+          throw new Error('❌ Email inválido. Digite um email válido.')
+        } else if (error.message.includes('Password should be at least')) {
+          throw new Error('❌ A senha deve ter pelo menos 6 caracteres.')
+        } else {
+          throw new Error(`❌ Erro ao criar conta: ${error.message}`)
+        }
+      }
 
       if (data.user) {
         // Verificar se o email precisa ser confirmado
         if (data.user.identities && data.user.identities.length === 0) {
-          setError("Este email já está cadastrado. Faça login ou recupere sua senha.")
+          setDebugInfo("⚠️ Email já cadastrado")
+          setError("❌ Este email já está cadastrado. Faça login ou recupere sua senha.")
         } else {
-          setSuccess("Conta criada com sucesso! Verifique seu email para confirmar o cadastro e depois faça login.")
+          setDebugInfo("✅ Conta criada! Verifique seu email.")
+          setSuccess("✅ Conta criada com sucesso! Verifique seu email para confirmar o cadastro e depois faça login.")
           setIsSignUp(false)
           setEmail("")
           setPassword("")
         }
       }
     } catch (err: any) {
-      setError(err.message || "Erro ao criar conta")
+      console.error('Erro completo:', err)
+      setError(err.message || "❌ Erro ao criar conta. Tente novamente.")
+      setDebugInfo(`❌ Erro: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
+    setSuccess("")
+    setDebugInfo("")
+
+    try {
+      setDebugInfo("🔄 Enviando email de recuperação...")
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      })
+
+      if (error) {
+        setDebugInfo(`❌ Erro: ${error.message}`)
+        throw new Error(`❌ Erro ao enviar email: ${error.message}`)
+      }
+
+      setDebugInfo("✅ Email enviado!")
+      setSuccess("✅ Email de recuperação enviado! Verifique sua caixa de entrada.")
+      setTimeout(() => {
+        setIsForgotPassword(false)
+        setEmail("")
+      }, 3000)
+    } catch (err: any) {
+      console.error('Erro completo:', err)
+      setError(err.message || "❌ Erro ao enviar email de recuperação")
+      setDebugInfo(`❌ Erro: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -106,8 +204,11 @@ function LoginForm() {
   const handleGoogleLogin = async () => {
     setLoading(true)
     setError("")
+    setDebugInfo("")
     
     try {
+      setDebugInfo("🔄 Iniciando login com Google...")
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -115,16 +216,134 @@ function LoginForm() {
         }
       })
 
-      if (error) throw error
+      if (error) {
+        setDebugInfo(`❌ Erro OAuth: ${error.message}`)
+        throw error
+      }
     } catch (err: any) {
+      console.error('Erro completo:', err)
       // Mensagem mais clara para erro de OAuth não configurado
       if (err.message?.includes('Unsupported provider') || err.message?.includes('missing OAuth secret')) {
-        setError("Login com Google não está configurado. Por favor, configure o OAuth do Google no Supabase ou use login com email/senha.")
+        setError("❌ Login com Google não está configurado. Configure o OAuth do Google no painel do Supabase (Authentication > Providers > Google) adicionando Client ID e Client Secret do Google Cloud Console.")
+        setDebugInfo("❌ OAuth do Google não configurado no Supabase")
       } else {
-        setError(err.message || "Erro ao fazer login com Google")
+        setError(err.message || "❌ Erro ao fazer login com Google")
+        setDebugInfo(`❌ Erro: ${err.message}`)
       }
       setLoading(false)
     }
+  }
+
+  // Renderizar formulário de recuperação de senha
+  if (isForgotPassword) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background com gradiente sutil */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-blue-700/10" />
+        
+        {/* Efeitos de fundo */}
+        <div className="absolute top-10 sm:top-20 left-10 sm:left-20 w-48 h-48 sm:w-72 sm:h-72 bg-blue-500/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 sm:bottom-20 right-10 sm:right-20 w-64 h-64 sm:w-96 sm:h-96 bg-blue-700/20 rounded-full blur-3xl" />
+
+        <Card className="w-full max-w-md relative z-10 shadow-2xl border-gray-800 bg-gray-900/50 backdrop-blur-xl">
+          <CardHeader className="space-y-4 sm:space-y-6 text-center pb-6 sm:pb-8">
+            {/* Logo */}
+            <div className="flex justify-center">
+              <img 
+                src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/1cf5cfcf-aeb5-4917-881a-024458c3580b.webp" 
+                alt="PJI ADV Logo" 
+                className="h-12 sm:h-16 w-auto"
+              />
+            </div>
+            
+            <div>
+              <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent">
+                Recuperar Senha
+              </CardTitle>
+              <CardDescription className="text-gray-400 mt-2 text-sm sm:text-base">
+                Digite seu email para receber o link de recuperação
+              </CardDescription>
+            </div>
+          </CardHeader>
+          
+          <CardContent>
+            <form onSubmit={handleForgotPassword} className="space-y-4 sm:space-y-5">
+              {error && (
+                <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-red-500/10 border border-red-500/20">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm text-red-400 break-words">{error}</p>
+                    {debugInfo && (
+                      <p className="text-[10px] sm:text-xs text-red-300 mt-1 opacity-70 break-words">{debugInfo}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {success && (
+                <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-green-500/10 border border-green-500/20">
+                  <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
+                    {debugInfo && (
+                      <p className="text-[10px] sm:text-xs text-green-300 mt-1 opacity-70 break-words">{debugInfo}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-gray-300 text-sm">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-9 sm:pl-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 sm:space-y-3 pt-2">
+                <Button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white font-medium h-10 sm:h-11 shadow-lg shadow-blue-500/20 text-sm sm:text-base"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    "Enviar Link de Recuperação"
+                  )}
+                </Button>
+                
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-gray-400 hover:text-white hover:bg-gray-800/50 text-sm sm:text-base"
+                  onClick={() => {
+                    setIsForgotPassword(false)
+                    setError("")
+                    setSuccess("")
+                    setDebugInfo("")
+                  }}
+                  disabled={loading}
+                >
+                  Voltar para o login
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -133,74 +352,85 @@ function LoginForm() {
       <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-blue-700/10" />
       
       {/* Efeitos de fundo */}
-      <div className="absolute top-20 left-20 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl" />
-      <div className="absolute bottom-20 right-20 w-96 h-96 bg-blue-700/20 rounded-full blur-3xl" />
+      <div className="absolute top-10 sm:top-20 left-10 sm:left-20 w-48 h-48 sm:w-72 sm:h-72 bg-blue-500/20 rounded-full blur-3xl" />
+      <div className="absolute bottom-10 sm:bottom-20 right-10 sm:right-20 w-64 h-64 sm:w-96 sm:h-96 bg-blue-700/20 rounded-full blur-3xl" />
 
       <Card className="w-full max-w-md relative z-10 shadow-2xl border-gray-800 bg-gray-900/50 backdrop-blur-xl">
-        <CardHeader className="space-y-6 text-center pb-8">
+        <CardHeader className="space-y-4 sm:space-y-6 text-center pb-6 sm:pb-8">
           {/* Logo */}
           <div className="flex justify-center">
             <img 
               src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/1cf5cfcf-aeb5-4917-881a-024458c3580b.webp" 
               alt="PJI ADV Logo" 
-              className="h-16 w-auto"
+              className="h-12 sm:h-16 w-auto"
             />
           </div>
           
           <div>
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent">
+            <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent">
               {isSignUp ? "Criar Conta" : "Bem-vindo"}
             </CardTitle>
-            <CardDescription className="text-gray-400 mt-2">
+            <CardDescription className="text-gray-400 mt-2 text-sm sm:text-base">
               Sistema de Gestão Jurídica Integrada
             </CardDescription>
           </div>
         </CardHeader>
         
         <CardContent>
-          <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-5">
+          <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4 sm:space-y-5">
             {error && (
-              <div className="p-4 rounded-lg flex items-start gap-3 bg-red-500/10 border border-red-500/20">
+              <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
-                <p className="text-sm text-red-400">{error}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm text-red-400 whitespace-pre-wrap break-words">{error}</p>
+                  {debugInfo && (
+                    <p className="text-[10px] sm:text-xs text-red-300 mt-2 opacity-70 font-mono break-words">{debugInfo}</p>
+                  )}
+                </div>
               </div>
             )}
 
             {success && (
-              <div className="p-4 rounded-lg flex items-start gap-3 bg-green-500/10 border border-green-500/20">
+              <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-green-500/10 border border-green-500/20">
                 <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />
-                <p className="text-sm text-green-400">{success}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
+                  {debugInfo && (
+                    <p className="text-[10px] sm:text-xs text-green-300 mt-2 opacity-70 font-mono break-words">{debugInfo}</p>
+                  )}
+                </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300">Email</Label>
+              <Label htmlFor="email" className="text-gray-300 text-sm">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
                 <Input
                   id="email"
                   type="email"
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500"
+                  className="pl-9 sm:pl-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-300">Senha</Label>
+              <Label htmlFor="password" className="text-gray-300 text-sm">Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500"
+                  className="pl-9 sm:pl-10 pr-9 sm:pr-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
                   required
+                  minLength={6}
                 />
                 <button
                   type="button"
@@ -208,21 +438,41 @@ function LoginForm() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="w-4 h-4 sm:w-5 sm:h-5" />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
                   )}
                 </button>
               </div>
             </div>
 
-            <div className="space-y-3 pt-2">
+            {/* Link de recuperação de senha - apenas no modo login */}
+            {!isSignUp && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsForgotPassword(true)}
+                  className="text-xs sm:text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  Esqueceu a senha?
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-2 sm:space-y-3 pt-2">
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white font-medium h-11 shadow-lg shadow-blue-500/20"
+                className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white font-medium h-10 sm:h-11 shadow-lg shadow-blue-500/20 text-sm sm:text-base"
                 disabled={loading}
               >
-                {loading ? "Processando..." : (isSignUp ? "Criar Conta" : "Entrar")}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processando...
+                  </>
+                ) : (
+                  isSignUp ? "Criar Conta" : "Entrar"
+                )}
               </Button>
 
               <div className="relative">
@@ -237,11 +487,11 @@ function LoginForm() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full bg-white hover:bg-gray-100 text-gray-900 font-medium h-11 border-gray-300"
+                className="w-full bg-white hover:bg-gray-100 text-gray-900 font-medium h-10 sm:h-11 border-gray-300 text-sm sm:text-base"
                 onClick={handleGoogleLogin}
                 disabled={loading}
               >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                   <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -253,11 +503,12 @@ function LoginForm() {
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full text-gray-400 hover:text-white hover:bg-gray-800/50"
+                className="w-full text-gray-400 hover:text-white hover:bg-gray-800/50 text-sm sm:text-base"
                 onClick={() => {
                   setIsSignUp(!isSignUp)
                   setError("")
                   setSuccess("")
+                  setDebugInfo("")
                 }}
                 disabled={loading}
               >
@@ -267,14 +518,21 @@ function LoginForm() {
           </form>
 
           {/* Informação de acesso */}
-          <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <p className="text-xs text-blue-400 text-center">
+          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-[10px] sm:text-xs text-blue-400 text-center">
               💡 <strong>Primeiro acesso?</strong> Crie sua conta e confirme o email para acessar a dashboard.
             </p>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-800 text-center">
-            <p className="text-xs text-gray-500">
+          {/* Informações de debug em desenvolvimento */}
+          {debugInfo && (
+            <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
+              <p className="text-[10px] sm:text-xs text-gray-400 font-mono break-words">{debugInfo}</p>
+            </div>
+          )}
+
+          <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-800 text-center">
+            <p className="text-[10px] sm:text-xs text-gray-500">
               Versão 1.0 - Sistema Seguro e Profissional
             </p>
           </div>
@@ -287,7 +545,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="text-white">Carregando...</div>
       </div>
     }>

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { FileText, Users, Calendar, DollarSign, TrendingUp, AlertCircle, CheckCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
-function HomeContent() {
+function DashboardContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
@@ -26,7 +26,7 @@ function HomeContent() {
       // Remover o parâmetro da URL após 5 segundos
       setTimeout(() => {
         setShowSuccess(false)
-        router.replace('/')
+        router.replace('/dashboard')
       }, 5000)
     }
   }, [searchParams])
@@ -242,7 +242,7 @@ function HomeContent() {
   )
 }
 
-export default function HomePage() {
+export default function DashboardPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center p-4">
@@ -252,7 +252,7 @@ export default function HomePage() {
         </div>
       </div>
     }>
-      <HomeContent />
+      <DashboardContent />
     </Suspense>
   )
 }

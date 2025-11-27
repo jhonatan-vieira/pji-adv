@@ -19,6 +19,20 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PJI ADV - Procedimentos Jurídicos Integrados",
   description: "Sistema completo de gestão jurídica para advogados e escritórios",
+  icons: {
+    icon: [
+      {
+        url: "https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/1cf5cfcf-aeb5-4917-881a-024458c3580b.webp",
+        type: "image/webp",
+      }
+    ],
+    apple: [
+      {
+        url: "https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/1cf5cfcf-aeb5-4917-881a-024458c3580b.webp",
+        type: "image/webp",
+      }
+    ]
+  }
 };
 
 export default function RootLayout({

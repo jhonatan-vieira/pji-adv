@@ -1,11 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(req: NextRequest) {
+export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
-      headers: req.headers,
+      headers: request.headers,
     },
   })
 
@@ -15,17 +14,17 @@ export async function middleware(req: NextRequest) {
     {
       cookies: {
         get(name: string) {
-          return req.cookies.get(name)?.value
+          return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: any) {
-          req.cookies.set({
+          request.cookies.set({
             name,
             value,
             ...options,
           })
           response = NextResponse.next({
             request: {
-              headers: req.headers,
+              headers: request.headers,
             },
           })
           response.cookies.set({
@@ -35,14 +34,14 @@ export async function middleware(req: NextRequest) {
           })
         },
         remove(name: string, options: any) {
-          req.cookies.set({
+          request.cookies.set({
             name,
             value: '',
             ...options,
           })
           response = NextResponse.next({
             request: {
-              headers: req.headers,
+              headers: request.headers,
             },
           })
           response.cookies.set({
@@ -59,23 +58,46 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // Rotas públicas que não precisam de autenticação
-  const publicRoutes = ['/auth/login', '/auth/callback']
-  const isPublicRoute = publicRoutes.some(route => req.nextUrl.pathname.startsWith(route))
+  const isAuthPage = request.nextUrl.pathname.startsWith('/auth')
+  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
+  const isHomePage = request.nextUrl.pathname === '/'
 
-  // Se não está autenticado e tenta acessar rota privada
-  if (!session && !isPublicRoute) {
-    return NextResponse.redirect(new URL('/auth/login', req.url))
+  // Se estiver na home page, redirecionar baseado na autenticação
+  if (isHomePage) {
+    if (session) {
+      const redirectUrl = new URL('/dashboard', request.url)
+      return NextResponse.redirect(redirectUrl)
+    } else {
+      const redirectUrl = new URL('/auth/login', request.url)
+      return NextResponse.redirect(redirectUrl)
+    }
   }
 
-  // Se está autenticado e tenta acessar login
-  if (session && req.nextUrl.pathname.startsWith('/auth/login')) {
-    return NextResponse.redirect(new URL('/', req.url))
+  // Se não houver sessão e tentar acessar dashboard, redirecionar para login
+  if (!session && isDashboard) {
+    const redirectUrl = new URL('/auth/login', request.url)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // Se houver sessão e tentar acessar páginas de auth, redirecionar para dashboard
+  if (session && isAuthPage) {
+    const redirectUrl = new URL('/dashboard', request.url)
+    return NextResponse.redirect(redirectUrl)
   }
 
   return response
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|lasy-bridge.js).*)'],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     * - api routes
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|api).*)',
+  ],
 }
