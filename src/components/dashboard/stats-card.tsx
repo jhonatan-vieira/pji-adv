@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { LucideIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -13,7 +14,7 @@ interface StatsCardProps {
   color?: "blue" | "green" | "gray"
 }
 
-export function StatsCard({ 
+export const StatsCard = memo(function StatsCard({ 
   title, 
   value, 
   icon: Icon, 
@@ -52,4 +53,4 @@ export function StatsCard({
       </CardContent>
     </Card>
   )
-}
+})

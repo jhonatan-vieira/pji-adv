@@ -1,14 +1,103 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, Suspense, memo, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Header } from "@/components/dashboard/header"
-import { Sidebar } from "@/components/dashboard/sidebar"
-import { StatsCard } from "@/components/dashboard/stats-card"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import dynamic from "next/dynamic"
 import { FileText, Users, Calendar, DollarSign, TrendingUp, AlertCircle, CheckCircle } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { createBrowserClient } from '@supabase/ssr'
+
+// Lazy loading de componentes pesados
+const Header = dynamic(() => import("@/components/dashboard/header").then(mod => ({ default: mod.Header })), {
+  loading: () => <div className="h-16 bg-black border-b border-gray-800 animate-pulse" />
+})
+
+const Sidebar = dynamic(() => import("@/components/dashboard/sidebar").then(mod => ({ default: mod.Sidebar })), {
+  loading: () => <div className="w-64 h-screen bg-black border-r border-gray-800 animate-pulse" />
+})
+
+const StatsCard = dynamic(() => import("@/components/dashboard/stats-card").then(mod => ({ default: mod.StatsCard })), {
+  ssr: false
+})
+
+const Card = dynamic(() => import("@/components/ui/card").then(mod => ({ default: mod.Card })))
+const CardContent = dynamic(() => import("@/components/ui/card").then(mod => ({ default: mod.CardContent })))
+const CardHeader = dynamic(() => import("@/components/ui/card").then(mod => ({ default: mod.CardHeader })))
+const CardTitle = dynamic(() => import("@/components/ui/card").then(mod => ({ default: mod.CardTitle })))
+const Button = dynamic(() => import("@/components/ui/button").then(mod => ({ default: mod.Button })))
+
+// Componente de loading otimizado
+const LoadingSpinner = memo(() => (
+  <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center p-4">
+    <div className="text-center">
+      <div className="w-16 h-16 border-4 border-[#0052CC] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p className="text-[#42526E] font-medium">Carregando dashboard...</p>
+    </div>
+  </div>
+))
+LoadingSpinner.displayName = "LoadingSpinner"
+
+// Componente de mensagem de sucesso memoizado
+const SuccessMessage = memo(({ userEmail }: { userEmail: string | null }) => (
+  <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+    <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+    <div className="flex-1 min-w-0">
+      <p className="text-sm font-medium text-green-800">
+        ✅ Login realizado com sucesso!
+      </p>
+      <p className="text-xs text-green-700 mt-1 break-words">
+        Bem-vindo ao sistema PJI ADV. Você está autenticado como <strong>{userEmail}</strong>
+      </p>
+    </div>
+  </div>
+))
+SuccessMessage.displayName = "SuccessMessage"
+
+// Componente de processo recente memoizado
+const ProcessItem = memo(({ index }: { index: number }) => (
+  <div className="flex items-center justify-between p-3 sm:p-4 bg-[#F4F5F7] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#0052CC]/10 rounded-lg flex items-center justify-center flex-shrink-0">
+        <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-[#0052CC]" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-[#0052CC] text-xs sm:text-sm truncate">
+          Processo {1000000 + index}-00.2024.8.00.0000
+        </p>
+        <p className="text-xs text-[#42526E] truncate">
+          Cliente Exemplo {index}
+        </p>
+      </div>
+    </div>
+    <span className="px-2 sm:px-3 py-1 bg-[#36B37E]/10 text-[#36B37E] rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ml-2">
+      Em andamento
+    </span>
+  </div>
+))
+ProcessItem.displayName = "ProcessItem"
+
+// Componente de tarefa urgente memoizado
+const TaskItem = memo(({ task, date, priority }: { task: string; date: string; priority: string }) => (
+  <div className="flex items-center justify-between p-3 sm:p-4 bg-[#F4F5F7] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+        priority === "high" ? "bg-red-100" : "bg-yellow-100"
+      }`}>
+        <AlertCircle className={`w-4 h-4 sm:w-5 sm:h-5 ${
+          priority === "high" ? "text-red-500" : "text-yellow-600"
+        }`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-[#0052CC] text-xs sm:text-sm truncate">
+          {task}
+        </p>
+        <p className="text-xs text-[#42526E]">
+          Prazo: {date}
+        </p>
+      </div>
+    </div>
+  </div>
+))
+TaskItem.displayName = "TaskItem"
 
 function DashboardContent() {
   const router = useRouter()
@@ -17,6 +106,19 @@ function DashboardContent() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
+  // Criar cliente Supabase com SSR - memoizado
+  const supabase = useMemo(() => createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ), [])
+
+  // Dados estáticos memoizados
+  const urgentTasks = useMemo(() => [
+    { task: "Contestação - Processo 1000001", date: "Hoje", priority: "high" },
+    { task: "Audiência - Processo 1000002", date: "Amanhã", priority: "high" },
+    { task: "Recurso - Processo 1000003", date: "Em 3 dias", priority: "medium" }
+  ], [])
+
   useEffect(() => {
     checkAuth()
     
@@ -24,10 +126,12 @@ function DashboardContent() {
     if (searchParams.get('confirmed') === 'true') {
       setShowSuccess(true)
       // Remover o parâmetro da URL após 5 segundos
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         setShowSuccess(false)
         router.replace('/dashboard')
       }, 5000)
+      
+      return () => clearTimeout(timer)
     }
   }, [searchParams])
 
@@ -55,14 +159,7 @@ function DashboardContent() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#0052CC] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-[#42526E] font-medium">Carregando dashboard...</p>
-        </div>
-      </div>
-    )
+    return <LoadingSpinner />
   }
 
   return (
@@ -75,19 +172,7 @@ function DashboardContent() {
         {/* Main Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {/* Mensagem de sucesso */}
-          {showSuccess && (
-            <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-green-800">
-                  ✅ Login realizado com sucesso!
-                </p>
-                <p className="text-xs text-green-700 mt-1 break-words">
-                  Bem-vindo ao sistema PJI ADV. Você está autenticado como <strong>{userEmail}</strong>
-                </p>
-              </div>
-            </div>
-          )}
+          {showSuccess && <SuccessMessage userEmail={userEmail} />}
 
           {/* Welcome Section */}
           <div className="mb-6 sm:mb-8">
@@ -144,27 +229,7 @@ function DashboardContent() {
               <CardContent>
                 <div className="space-y-3 sm:space-y-4">
                   {[1, 2, 3].map((i) => (
-                    <div 
-                      key={i}
-                      className="flex items-center justify-between p-3 sm:p-4 bg-[#F4F5F7] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#0052CC]/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-[#0052CC]" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-[#0052CC] text-xs sm:text-sm truncate">
-                            Processo {1000000 + i}-00.2024.8.00.0000
-                          </p>
-                          <p className="text-xs text-[#42526E] truncate">
-                            Cliente Exemplo {i}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="px-2 sm:px-3 py-1 bg-[#36B37E]/10 text-[#36B37E] rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ml-2">
-                        Em andamento
-                      </span>
-                    </div>
+                    <ProcessItem key={i} index={i} />
                   ))}
                 </div>
               </CardContent>
@@ -180,37 +245,8 @@ function DashboardContent() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 sm:space-y-4">
-                  {[
-                    { task: "Contestação - Processo 1000001", date: "Hoje", priority: "high" },
-                    { task: "Audiência - Processo 1000002", date: "Amanhã", priority: "high" },
-                    { task: "Recurso - Processo 1000003", date: "Em 3 dias", priority: "medium" }
-                  ].map((item, i) => (
-                    <div 
-                      key={i}
-                      className="flex items-center justify-between p-3 sm:p-4 bg-[#F4F5F7] rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                        <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          item.priority === "high" 
-                            ? "bg-red-100" 
-                            : "bg-yellow-100"
-                        }`}>
-                          <AlertCircle className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                            item.priority === "high" 
-                              ? "text-red-500" 
-                              : "text-yellow-600"
-                          }`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-[#0052CC] text-xs sm:text-sm truncate">
-                            {item.task}
-                          </p>
-                          <p className="text-xs text-[#42526E]">
-                            Prazo: {item.date}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  {urgentTasks.map((item, i) => (
+                    <TaskItem key={i} {...item} />
                   ))}
                 </div>
               </CardContent>
@@ -244,14 +280,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#0052CC] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-[#42526E] font-medium">Carregando...</p>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<LoadingSpinner />}>
       <DashboardContent />
     </Suspense>
   )

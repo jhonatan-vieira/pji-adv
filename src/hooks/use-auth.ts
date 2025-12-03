@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { User } from "@supabase/supabase-js"
@@ -28,10 +28,12 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signOut = async () => {
+  // Memoizar função de signOut para evitar re-criação
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     router.push("/auth/login")
-  }
+  }, [router])
 
-  return { user, loading, signOut }
+  // Retornar objeto memoizado
+  return useMemo(() => ({ user, loading, signOut }), [user, loading, signOut])
 }

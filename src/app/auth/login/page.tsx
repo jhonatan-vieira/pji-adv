@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Mail, Lock, AlertCircle, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { createBrowserClient } from '@supabase/ssr'
 
 function LoginForm() {
   const router = useRouter()
@@ -20,90 +20,70 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
   const [isForgotPassword, setIsForgotPassword] = useState(false)
-  const [debugInfo, setDebugInfo] = useState("")
+
+  // Criar cliente Supabase com SSR
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   useEffect(() => {
     // Verificar se há mensagem de erro ou confirmação na URL
     const errorParam = searchParams.get('error')
+    const messageParam = searchParams.get('message')
     const confirmedParam = searchParams.get('confirmed')
     
-    if (errorParam === 'confirmation_failed') {
-      setError("Erro ao confirmar email. Tente fazer login novamente.")
+    if (errorParam) {
+      setError(decodeURIComponent(messageParam || 'Erro ao processar autenticação'))
     }
     
     if (confirmedParam === 'true') {
       setSuccess("Email confirmado com sucesso! Faça login para continuar.")
     }
-
-    // Verificar se usuário já está autenticado
-    checkUser()
   }, [searchParams])
-
-  const checkUser = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        // Usuário já está autenticado, redirecionar para dashboard
-        router.push('/dashboard')
-      }
-    } catch (err) {
-      console.error('Erro ao verificar sessão:', err)
-    }
-  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError("")
     setSuccess("")
-    setDebugInfo("")
 
     try {
-      // Adicionar informações de debug
-      setDebugInfo("🔄 Tentando fazer login...")
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
-        setDebugInfo(`❌ Erro no login: ${error.message}`)
-        
         // Mensagens de erro mais amigáveis e específicas
         if (error.message.includes('Invalid login credentials')) {
-          throw new Error('❌ Email ou senha incorretos. Verifique suas credenciais e tente novamente.')
+          throw new Error('Email ou senha incorretos. Verifique suas credenciais e tente novamente.')
         } else if (error.message.includes('Email not confirmed')) {
-          throw new Error('⚠️ Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada e spam.')
+          throw new Error('Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada e spam.')
         } else if (error.message.includes('Invalid email')) {
-          throw new Error('❌ Email inválido. Digite um email válido.')
+          throw new Error('Email inválido. Digite um email válido.')
         } else if (error.message.includes('User not found')) {
-          throw new Error('❌ Usuário não encontrado. Crie uma conta primeiro.')
+          throw new Error('Usuário não encontrado. Crie uma conta primeiro.')
         } else {
-          throw new Error(`❌ Erro ao fazer login: ${error.message}`)
+          throw new Error(`Erro ao fazer login: ${error.message}`)
         }
       }
 
       if (data.session && data.user) {
-        setDebugInfo("✅ Login realizado com sucesso!")
-        setSuccess("✅ Login realizado com sucesso! Redirecionando para o sistema...")
+        setSuccess("Login realizado com sucesso! Redirecionando...")
         
-        // Aguardar um momento para garantir que a sessão foi salva
+        // Aguardar um pouco para garantir que a sessão foi salva
         await new Promise(resolve => setTimeout(resolve, 500))
         
-        setDebugInfo("✅ Redirecionando para dashboard...")
-        
-        // Redirecionar para /dashboard
-        window.location.href = '/dashboard'
+        // Usar router.push em vez de window.location.href
+        router.push('/dashboard')
+        router.refresh() // Forçar refresh para atualizar o middleware
       } else {
-        setDebugInfo("⚠️ Login retornou sem sessão ou usuário")
-        throw new Error('⚠️ Erro inesperado ao fazer login. Tente novamente.')
+        throw new Error('Erro inesperado ao fazer login. Tente novamente.')
       }
     } catch (err: any) {
       console.error('Erro completo:', err)
-      setError(err.message || "❌ Erro ao fazer login. Tente novamente.")
-      setDebugInfo(`❌ Erro: ${err.message}`)
-    } finally {
+      setError(err.message || "Erro ao fazer login. Tente novamente.")
       setLoading(false)
     }
   }
@@ -113,14 +93,11 @@ function LoginForm() {
     setLoading(true)
     setError("")
     setSuccess("")
-    setDebugInfo("")
 
     try {
-      setDebugInfo("🔄 Criando conta...")
-
       // Validar senha
       if (password.length < 6) {
-        throw new Error('❌ A senha deve ter pelo menos 6 caracteres.')
+        throw new Error('A senha deve ter pelo menos 6 caracteres.')
       }
 
       const { data, error } = await supabase.auth.signUp({
@@ -132,27 +109,33 @@ function LoginForm() {
       })
 
       if (error) {
-        setDebugInfo(`❌ Erro ao criar conta: ${error.message}`)
-        
         if (error.message.includes('User already registered')) {
-          throw new Error('❌ Este email já está cadastrado. Faça login ou recupere sua senha.')
+          throw new Error('Este email já está cadastrado. Faça login ou recupere sua senha.')
         } else if (error.message.includes('Invalid email')) {
-          throw new Error('❌ Email inválido. Digite um email válido.')
+          throw new Error('Email inválido. Digite um email válido.')
         } else if (error.message.includes('Password should be at least')) {
-          throw new Error('❌ A senha deve ter pelo menos 6 caracteres.')
+          throw new Error('A senha deve ter pelo menos 6 caracteres.')
         } else {
-          throw new Error(`❌ Erro ao criar conta: ${error.message}`)
+          throw new Error(`Erro ao criar conta: ${error.message}`)
         }
       }
 
       if (data.user) {
         // Verificar se o email precisa ser confirmado
         if (data.user.identities && data.user.identities.length === 0) {
-          setDebugInfo("⚠️ Email já cadastrado")
-          setError("❌ Este email já está cadastrado. Faça login ou recupere sua senha.")
+          setError("Este email já está cadastrado. Faça login ou recupere sua senha.")
+        } else if (data.session) {
+          // Se já tiver sessão (confirmação automática), redirecionar
+          setSuccess("Conta criada com sucesso! Redirecionando...")
+          
+          // Aguardar um pouco para garantir que a sessão foi salva
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          router.push('/dashboard')
+          router.refresh() // Forçar refresh para atualizar o middleware
         } else {
-          setDebugInfo("✅ Conta criada! Verifique seu email.")
-          setSuccess("✅ Conta criada com sucesso! Verifique seu email para confirmar o cadastro e depois faça login.")
+          // Se precisar confirmar email
+          setSuccess("Conta criada com sucesso! Verifique seu email para confirmar o cadastro e depois faça login.")
           setIsSignUp(false)
           setEmail("")
           setPassword("")
@@ -160,8 +143,7 @@ function LoginForm() {
       }
     } catch (err: any) {
       console.error('Erro completo:', err)
-      setError(err.message || "❌ Erro ao criar conta. Tente novamente.")
-      setDebugInfo(`❌ Erro: ${err.message}`)
+      setError(err.message || "Erro ao criar conta. Tente novamente.")
     } finally {
       setLoading(false)
     }
@@ -172,30 +154,24 @@ function LoginForm() {
     setLoading(true)
     setError("")
     setSuccess("")
-    setDebugInfo("")
 
     try {
-      setDebugInfo("🔄 Enviando email de recuperação...")
-
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
       if (error) {
-        setDebugInfo(`❌ Erro: ${error.message}`)
-        throw new Error(`❌ Erro ao enviar email: ${error.message}`)
+        throw new Error(`Erro ao enviar email: ${error.message}`)
       }
 
-      setDebugInfo("✅ Email enviado!")
-      setSuccess("✅ Email de recuperação enviado! Verifique sua caixa de entrada.")
+      setSuccess("Email de recuperação enviado! Verifique sua caixa de entrada.")
       setTimeout(() => {
         setIsForgotPassword(false)
         setEmail("")
       }, 3000)
     } catch (err: any) {
       console.error('Erro completo:', err)
-      setError(err.message || "❌ Erro ao enviar email de recuperação")
-      setDebugInfo(`❌ Erro: ${err.message}`)
+      setError(err.message || "Erro ao enviar email de recuperação")
     } finally {
       setLoading(false)
     }
@@ -204,11 +180,8 @@ function LoginForm() {
   const handleGoogleLogin = async () => {
     setLoading(true)
     setError("")
-    setDebugInfo("")
     
     try {
-      setDebugInfo("🔄 Iniciando login com Google...")
-
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -217,18 +190,15 @@ function LoginForm() {
       })
 
       if (error) {
-        setDebugInfo(`❌ Erro OAuth: ${error.message}`)
         throw error
       }
     } catch (err: any) {
       console.error('Erro completo:', err)
       // Mensagem mais clara para erro de OAuth não configurado
       if (err.message?.includes('Unsupported provider') || err.message?.includes('missing OAuth secret')) {
-        setError("❌ Login com Google não está configurado. Configure o OAuth do Google no painel do Supabase (Authentication > Providers > Google) adicionando Client ID e Client Secret do Google Cloud Console.")
-        setDebugInfo("❌ OAuth do Google não configurado no Supabase")
+        setError("Login com Google não está configurado. Configure o OAuth do Google no painel do Supabase (Authentication > Providers > Google) adicionando Client ID e Client Secret do Google Cloud Console.")
       } else {
-        setError(err.message || "❌ Erro ao fazer login com Google")
-        setDebugInfo(`❌ Erro: ${err.message}`)
+        setError(err.message || "Erro ao fazer login com Google")
       }
       setLoading(false)
     }
@@ -271,24 +241,14 @@ function LoginForm() {
               {error && (
                 <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-red-500/10 border border-red-500/20">
                   <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-red-400 break-words">{error}</p>
-                    {debugInfo && (
-                      <p className="text-[10px] sm:text-xs text-red-300 mt-1 opacity-70 break-words">{debugInfo}</p>
-                    )}
-                  </div>
+                  <p className="text-xs sm:text-sm text-red-400 break-words">{error}</p>
                 </div>
               )}
 
               {success && (
                 <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-green-500/10 border border-green-500/20">
                   <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
-                    {debugInfo && (
-                      <p className="text-[10px] sm:text-xs text-green-300 mt-1 opacity-70 break-words">{debugInfo}</p>
-                    )}
-                  </div>
+                  <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
                 </div>
               )}
 
@@ -332,7 +292,6 @@ function LoginForm() {
                     setIsForgotPassword(false)
                     setError("")
                     setSuccess("")
-                    setDebugInfo("")
                   }}
                   disabled={loading}
                 >
@@ -381,24 +340,14 @@ function LoginForm() {
             {error && (
               <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-red-400 whitespace-pre-wrap break-words">{error}</p>
-                  {debugInfo && (
-                    <p className="text-[10px] sm:text-xs text-red-300 mt-2 opacity-70 font-mono break-words">{debugInfo}</p>
-                  )}
-                </div>
+                <p className="text-xs sm:text-sm text-red-400 whitespace-pre-wrap break-words">{error}</p>
               </div>
             )}
 
             {success && (
               <div className="p-3 sm:p-4 rounded-lg flex items-start gap-2 sm:gap-3 bg-green-500/10 border border-green-500/20">
                 <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
-                  {debugInfo && (
-                    <p className="text-[10px] sm:text-xs text-green-300 mt-2 opacity-70 font-mono break-words">{debugInfo}</p>
-                  )}
-                </div>
+                <p className="text-xs sm:text-sm text-green-400 break-words">{success}</p>
               </div>
             )}
 
@@ -508,7 +457,6 @@ function LoginForm() {
                   setIsSignUp(!isSignUp)
                   setError("")
                   setSuccess("")
-                  setDebugInfo("")
                 }}
                 disabled={loading}
               >
@@ -523,13 +471,6 @@ function LoginForm() {
               💡 <strong>Primeiro acesso?</strong> Crie sua conta e confirme o email para acessar a dashboard.
             </p>
           </div>
-
-          {/* Informações de debug em desenvolvimento */}
-          {debugInfo && (
-            <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
-              <p className="text-[10px] sm:text-xs text-gray-400 font-mono break-words">{debugInfo}</p>
-            </div>
-          )}
 
           <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-800 text-center">
             <p className="text-[10px] sm:text-xs text-gray-500">
